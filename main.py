@@ -1,16 +1,39 @@
 import time
 import uuid
-from typing import List
 
-from fastapi import FastAPI, Query
+import jwt
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
+
+# =========================
+# Configuration
+# =========================
+
+EMAIL = "YOUR_EMAIL_HERE"
 
 ALLOWED_ORIGIN = "https://dash-dh6obe.example.com"
 
-# Replace with your logged-in email
-EMAIL = "22f3000996@ds.study.iitm.ac.in"
+ISSUER = "https://idp.exam.local"
+AUDIENCE = "tds-ges2vabw.apps.exam.local"
+
+PUBLIC_KEY = """-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2okOHspNjgA+2rTLbeuY
+cxiP/hG8C6Sb9iwg3yiLAA4HCnpITcbWCSelbvbYGuc3EbNy4xFyf5Cbj5DHJMID
+EkryOgyd2giIIIBOUBj8S63uGcnRpOBh9NFatfNwheKuzsPuVNldu6A9cNteNpXc
+WyJjG2axVfmq7i6SuKr1JoWYG7xTTAvKPujSl4OtsQfO3h5NepzdfXpr28oNnzfW
+ed+zclR6BcmNNo/WVfJ4xyCLSf0BCOgdTgW6PdaChd1l9VDetJZVEgC5tkyvXsfI
+SI6iyrYbKR0NEBSqq4XkadEjsCs4F1RncsS4LlgniT7GlkL9Mce3b0wGLs9/7ZIX
+dQIDAQAB
+-----END PUBLIC KEY-----"""
+
 app = FastAPI()
+
+# =========================
+# CORS
+# =========================
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,6 +43,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# =========================
+# Middleware
+# =========================
 
 class RequestMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
@@ -37,10 +63,13 @@ class RequestMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(RequestMiddleware)
 
+# =========================
+# Question 1
+# =========================
 
 @app.get("/stats")
 async def stats(values: str = Query(...)):
-    nums: List[int] = [int(x.strip()) for x in values.split(",") if x.strip()]
+    nums = [int(x.strip()) for x in values.split(",") if x.strip()]
 
     return {
         "email": EMAIL,
@@ -50,3 +79,35 @@ async def stats(values: str = Query(...)):
         "max": max(nums),
         "mean": sum(nums) / len(nums),
     }
+
+# =========================
+# Question 2
+# =========================
+
+class TokenRequest(BaseModel):
+    token: str
+
+
+@app.post("/verify")
+async def verify(req: TokenRequest):
+    try:
+        payload = jwt.decode(
+            req.token,
+            PUBLIC_KEY,
+            algorithms=["RS256"],
+            issuer=ISSUER,
+            audience=AUDIENCE,
+        )
+
+        return {
+            "valid": True,
+            "email": payload.get("email"),
+            "sub": payload.get("sub"),
+            "aud": payload.get("aud"),
+        }
+
+    except jwt.PyJWTError:
+        return JSONResponse(
+            status_code=401,
+            content={"valid": False},
+        )
